@@ -1,0 +1,6 @@
+{
+  "name": "Articraft",
+  "description": "A community platform for creators featuring real-time chat and personal portfolios.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
