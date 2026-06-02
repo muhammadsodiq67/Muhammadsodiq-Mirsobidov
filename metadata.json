@@ -1,6 +1,6 @@
 {
-  "name": "Articraft",
-  "description": "A community platform for creators featuring real-time chat and personal portfolios.",
+  "name": "Articraft Edu",
+  "description": "1-11 sinf o'quvchilari uchun zamonaviy ta'lim platformasi. Darslar, testlar va o'zaro muloqot markazi.",
   "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

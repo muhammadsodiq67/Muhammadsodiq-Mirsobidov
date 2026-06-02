@@ -12,47 +12,97 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Gemini API Initialization
-  const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY || "",
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      }
-    }
-  });
-
-  // Personal AI Assistant Route (Muhammadsodiq's Assistant)
-  app.post("/api/ai/assistant", async (req, res) => {
-    try {
-      const { message, isAdminAway } = req.body;
-      
-      const systemPrompt = isAdminAway 
-        ? "Siz Muhammadsodiqning shaxsiy yordamchisiz. Muhammadsodiq hozir band, shuning uchun siz u uchun javob beryapsiz. Gapni 'Muhammadsodiqning hozir vaqti yo'q, men u bilan alohida gaplashaman' deb boshlang va foydalanuvchiga yordam bering."
-        : "Siz Articraft platformasining aqlli yordamchisiz. Foydalanuvchilarga platformadan foydalanish, ish jarayonlari va boshqa texnik masalalarda yordam bering.";
-
-      const chat = ai.chats.create({
-        model: "gemini-3-flash-preview",
-        config: { systemInstruction: systemPrompt },
-      });
-
-      const result = await chat.sendMessage({ message });
-      res.json({ text: result.text });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
   });
 
   // Basic in-memory store for demo (Clear on restart)
   let generalChatMessages: any[] = [];
   let userRequests: any[] = [];
+  let assistantChats: Record<string, any[]> = {}; // { userId: [{ role, text, senderName }] }
   let users: any[] = [
-    { id: '1', name: 'Ali', isPremium: false, isBanned: false },
-    { id: '2', name: 'Vali', isPremium: true, isBanned: false }
+    { id: '1', name: 'Ali', nickname: 'Ali67', isPremium: false, isBanned: false },
+    { id: '2', name: 'Vali', nickname: 'Vali_PRO', isPremium: true, isBanned: false }
   ];
 
+  // Gemini API Initialization (Lazy)
+  let _ai: any = null;
+  const getAI = () => {
+    if (!_ai) {
+      if (!process.env.GEMINI_API_KEY) {
+        console.error("GEMINI_API_KEY is missing");
+        return null;
+      }
+      _ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+    }
+    return _ai;
+  };
+
+  // Personal AI Assistant Route (Muhammadsodiq's Assistant)
+  app.post("/api/ai/assistant", async (req, res) => {
+    try {
+      const ai = getAI();
+      if (!ai) throw new Error("AI initialized failed - check API key");
+      
+      const { message, userId, nickname, isAdminAway } = req.body;
+      
+      if (!assistantChats[userId]) assistantChats[userId] = [];
+      
+      // Save user message
+      assistantChats[userId].push({ role: 'user', text: message, senderName: nickname, timestamp: new Date().toISOString() });
+
+      const systemPrompt = isAdminAway 
+        ? "Siz Muhammadsodiqning shaxsiy ta'lim yordamchisiz. Muhammadsodiq hozir darsda yoki band, shuning uchun siz o'quvchilarga u uchun javob beryapsiz. Gapni 'Muhammadsodiq hozir darsda, men sizga o'qishda yordam beraman' deb boshlang va foydalanuvchiga fanlar, darslar yoki platforma bo'yicha yordam bering."
+        : "Siz Articraft Edu platformasining aqlli o'qituvchi yordamchisiz. Foydalanuvchilarga (o'quvchilarga) platformadan foydalanish, darslar, maktab fanlari va ta'limiy masalalarda yordam bering.";
+
+      const chat = ai.chats.create({
+        model: "gemini-3-flash-preview",
+        config: { systemInstruction: systemPrompt },
+        history: assistantChats[userId]
+          .filter(m => !m.isFromAdmin) // Admin messages aren't 'user' or 'model' roles in Gemini terms usually, simplified here
+          .map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] }))
+      });
+
+      const result = await chat.sendMessage({ message });
+      const aiResponse = result.text;
+      
+      // Save AI response
+      assistantChats[userId].push({ role: 'model', text: aiResponse, senderName: 'Articraft AI', timestamp: new Date().toISOString() });
+
+      res.json({ text: aiResponse });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/ai/history/:userId", (req, res) => {
+    res.json(assistantChats[req.params.userId] || []);
+  });
+
   app.get("/api/admin/data", (req, res) => {
-    res.json({ users, requests: userRequests });
+    res.json({ users, requests: userRequests, assistantChats });
+  });
+
+  app.post("/api/admin/assistant-reply", (req, res) => {
+    const { userId, message } = req.body;
+    if (!assistantChats[userId]) assistantChats[userId] = [];
+    
+    assistantChats[userId].push({ 
+      role: 'model',
+      text: message, 
+      senderName: 'Muhammadsodiq (Admin)', 
+      isFromAdmin: true,
+      timestamp: new Date().toISOString() 
+    });
+    
+    res.json({ success: true });
   });
 
   app.post("/api/admin/action", (req, res) => {
